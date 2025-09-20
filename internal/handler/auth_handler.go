@@ -24,9 +24,9 @@ func (h *AuthHandler) Login(c echo.Context) error {
 		return utils.ErrorResponse(c, http.StatusBadRequest, "Invalid request body")
 	}
 
-	// Basic validation (can be enhanced with a validation library)
-	if req.Email == "" || req.Password == "" {
-		return utils.ErrorResponse(c, http.StatusBadRequest, "Email and password are required")
+	lang := c.Request().Header.Get("Accept-Language")
+	if msg, ok := utils.ValidateStruct(req, lang); !ok {
+		return utils.ErrorResponse(c, http.StatusBadRequest, msg)
 	}
 
 	// Extract User-Agent for device_info
@@ -60,6 +60,11 @@ func (h *AuthHandler) Refresh(c echo.Context) error {
 	req := new(dtos.RefreshTokenRequest)
 	if err := c.Bind(req); err != nil {
 		return utils.ErrorResponse(c, http.StatusBadRequest, "Invalid request body")
+	}
+
+	lang := c.Request().Header.Get("Accept-Language")
+	if msg, ok := utils.ValidateStruct(req, lang); !ok {
+		return utils.ErrorResponse(c, http.StatusBadRequest, msg)
 	}
 
 	// Extract User-Agent for device_info

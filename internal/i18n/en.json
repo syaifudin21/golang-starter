@@ -1,0 +1,5 @@
+{
+    "required": "is required",
+    "email": "is not a valid email",
+    "min": "must be at least {{.Min}} characters"
+}

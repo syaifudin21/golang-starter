@@ -3,6 +3,7 @@ package main
 import (
 	"exam/database"
 	"exam/internal/handler"
+	"exam/internal/i18n"
 	"exam/internal/middleware"
 	"exam/internal/repository"
 	"exam/internal/routes"
@@ -47,6 +48,7 @@ func main() {
 }
 
 func runAPI() {
+	i18n.Init()
 	db, err := database.NewDB()
 	if err != nil {
 		panic(err)

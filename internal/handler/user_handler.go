@@ -26,8 +26,9 @@ func (h *UserHandler) UpdateAccount(c echo.Context) error {
 		return utils.ErrorResponse(c, http.StatusBadRequest, "Invalid request body")
 	}
 
-	if req.Name == "" {
-		return utils.ErrorResponse(c, http.StatusBadRequest, "Name is required")
+	lang := c.Request().Header.Get("Accept-Language")
+	if msg, ok := utils.ValidateStruct(req, lang); !ok {
+		return utils.ErrorResponse(c, http.StatusBadRequest, msg)
 	}
 
 	if err := h.authService.UpdateUserAccount(int(userID), req.Name, req.Phone); err != nil {
@@ -48,8 +49,9 @@ func (h *UserHandler) UpdatePassword(c echo.Context) error {
 		return utils.ErrorResponse(c, http.StatusBadRequest, "Invalid request body")
 	}
 
-	if req.OldPassword == "" || req.NewPassword == "" {
-		return utils.ErrorResponse(c, http.StatusBadRequest, "Old password and new password are required")
+	lang := c.Request().Header.Get("Accept-Language")
+	if msg, ok := utils.ValidateStruct(req, lang); !ok {
+		return utils.ErrorResponse(c, http.StatusBadRequest, msg)
 	}
 
 	if err := h.authService.UpdateUserPassword(int(userID), req.OldPassword, req.NewPassword); err != nil {
@@ -99,8 +101,9 @@ func (h *UserHandler) UpdateUserRole(c echo.Context) error {
 		return utils.ErrorResponse(c, http.StatusBadRequest, "Invalid request body")
 	}
 
-	if req.Role == "" {
-		return utils.ErrorResponse(c, http.StatusBadRequest, "Role is required")
+	lang := c.Request().Header.Get("Accept-Language")
+	if msg, ok := utils.ValidateStruct(req, lang); !ok {
+		return utils.ErrorResponse(c, http.StatusBadRequest, msg)
 	}
 
 	if err := h.authService.UpdateUserRole(userUUID, req.Role); err != nil {

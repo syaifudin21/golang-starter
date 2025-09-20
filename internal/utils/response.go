@@ -6,12 +6,12 @@ import (
 )
 
 type Response struct {
-	Message string      `json:"message"`
+	Message interface{} `json:"message"`
 	Data    interface{} `json:"data"`
 }
 
 // JSONResponse sends a standardized JSON response.
-func JSONResponse(c echo.Context, statusCode int, message string, data interface{}) error {
+func JSONResponse(c echo.Context, statusCode int, message interface{}, data interface{}) error {
 	return c.JSON(statusCode, Response{
 		Message: message,
 		Data:    data,
@@ -24,6 +24,6 @@ func SuccessResponse(c echo.Context, message string, data interface{}) error {
 }
 
 // ErrorResponse sends a standardized error JSON response.
-func ErrorResponse(c echo.Context, statusCode int, message string) error {
+func ErrorResponse(c echo.Context, statusCode int, message interface{}) error {
 	return JSONResponse(c, statusCode, message, nil)
 }
