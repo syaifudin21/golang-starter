@@ -6,4 +6,31 @@ p, admin, /api/v1/devices, GET
 p, admin, /api/v1/devices/*, DELETE
 p, admin, /api/v1/users, GET
 p, admin, /api/v1/users/*, GET
-p, admin, /api/v1/users/*, PUT
+p, admin, /api/v1/users/:uuid, PUT
+
+p, student, /api/v1/account, GET
+p, student, /api/v1/logout, POST
+p, student, /api/v1/account, PUT
+p, student, /api/v1/password, PUT
+p, student, /api/v1/devices, GET
+p, student, /api/v1/devices/*, DELETE
+p, student, /api/v1/quiz/join/:quizUUID, GET
+
+p, teacher, /api/v1/account, GET
+p, teacher, /api/v1/logout, POST
+p, teacher, /api/v1/account, PUT
+p, teacher, /api/v1/password, PUT
+p, teacher, /api/v1/devices, GET
+p, teacher, /api/v1/devices/*, DELETE
+p, teacher, /api/v1/quizzes, GET
+p, teacher, /api/v1/quizzes, POST
+p, teacher, /api/v1/quizzes/:quizID, GET
+p, teacher, /api/v1/quizzes/:quizID, PUT
+p, teacher, /api/v1/quizzes/:quizID/questions, POST
+p, teacher, /api/v1/quizzes/:quizID/questions, DETETE
+p, teacher, /api/v1/quizzes/:quizID/questions/:questionID, PUT
+p, teacher, /api/v1/quizzes/:quizID, GET
+p, teacher, /api/v1/quizzes/:quizID/students/count, GET
+p, teacher, /api/v1/quizzes/:quizID/students, GET
+p, teacher, /api/v1/quiz/join/:quizUUID, GET
+p, teacher, /api/v1/quizzes/:quizID/start, POST

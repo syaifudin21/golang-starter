@@ -8,6 +8,7 @@ import (
 	"exam/internal/repository"
 	"exam/internal/routes"
 	"exam/internal/service"
+	"exam/internal/websocket"
 	"fmt"
 	"log"
 	"net/http"
@@ -21,6 +22,8 @@ import (
 	_ "github.com/golang-migrate/migrate/v4/source/file"
 	"github.com/joho/godotenv"
 	"github.com/labstack/echo/v4"
+	"golang.org/x/oauth2"
+	"golang.org/x/oauth2/google"
 )
 
 func main() {
@@ -54,30 +57,14 @@ func runAPI() {
 		panic(err)
 	}
 
-	// Run migrations
-	driver, err := mysql.WithInstance(db, &mysql.Config{})
-	if err != nil {
-		log.Fatal(err)
-	}
+	fmt.Println("Database migration and model sync complete")
 
-	m, err := migrate.NewWithDatabaseInstance(
-		"file://database/migration",
-		"mysql",
-		driver,
-	)
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	if err := m.Up(); err != nil && err != migrate.ErrNoChange {
-		log.Fatal(err)
-	}
-
-	fmt.Println("Migration check complete")
+	// Start the websocket hub
+	hub := websocket.NewHub()
+	go hub.Run()
 
 	e := echo.New()
 
-	// Initialize Casbin enforcer
 	modelPath := filepath.Join("internal", "config", "rbac_model.conf")
 	policyPath := filepath.Join("internal", "config", "policy.csv")
 	enforcer, err := casbin.NewEnforcer(modelPath, policyPath)
@@ -85,32 +72,51 @@ func runAPI() {
 		log.Fatalf("Failed to create Casbin enforcer: %v", err)
 	}
 
+	// Initialize Google OAuth2 config
+	googleOauthConfig := &oauth2.Config{
+		RedirectURL:  os.Getenv("GOOGLE_REDIRECT_URI"),
+		ClientID:     os.Getenv("GOOGLE_CLIENT_ID"),
+		ClientSecret: os.Getenv("GOOGLE_CLIENT_SECRET"),
+		Scopes:       []string{"https://www.googleapis.com/auth/userinfo.email", "https://www.googleapis.com/auth/userinfo.profile"},
+		Endpoint:     google.Endpoint,
+	}
+
 	// Initialize repositories
 	userRepo := repository.NewUserRepository(db)
 	deviceRepo := repository.NewDeviceRepository(db)
+	quizRepo := repository.NewQuizRepository(db)
 
-	// Initialize services and handlers
+	// Initialize services
 	deviceService := service.NewDeviceService(deviceRepo)
 	authService := service.NewAuthService(userRepo, deviceRepo)
-	authHandler := handler.NewAuthHandler(authService)
-	accountHandler := handler.NewAccountHandler(db, authService, deviceService)
-	userHandler := handler.NewUserHandler(authService)
+	quizService := service.NewQuizService(quizRepo, hub)
 
-	// Register routes
+	// Initialize handlers
+	authHandler := handler.NewAuthHandler(authService, googleOauthConfig)
+	accountHandler := handler.NewAccountHandler(authService, deviceService)
+	userHandler := handler.NewUserHandler(authService)
+	quizHandler := handler.NewQuizHandler(quizService)
+	websocketHandler := handler.NewWebsocketHandler(hub, quizService)
+
+	// Register health check
 	e.GET("/health", func(c echo.Context) error {
-		err := db.Ping()
+		sqlDB, err := db.DB()
 		if err != nil {
+			return c.String(http.StatusInternalServerError, "failed to get db instance")
+		}
+		if err := sqlDB.Ping(); err != nil {
 			return c.String(http.StatusInternalServerError, "database not connected")
 		}
 		return c.String(http.StatusOK, "database connected")
 	})
 
+	// Register routes
 	routes.AuthRoutes(e, authHandler)
 
 	v1 := e.Group("/api/v1")
 	v1.Use(middleware.JWTAuthMiddleware(deviceRepo))
 	v1.Use(middleware.CasbinAuthMiddleware(enforcer))
-	routes.APIRoutes(v1, authHandler, accountHandler, userHandler)
+	routes.APIRoutes(v1, authHandler, accountHandler, userHandler, quizHandler, websocketHandler)
 
 	port := os.Getenv("PORT")
 	if port == "" {
@@ -122,8 +128,7 @@ func runAPI() {
 
 func runMigration() {
 	if len(os.Args) < 3 {
-		fmt.Println("Usage: go run . migrate <subcommand>")
-		fmt.Println("Subcommands: up, down, force")
+		fmt.Println("Usage: go run . migrate <up|down|force|version>")
 		return
 	}
 
@@ -131,11 +136,15 @@ func runMigration() {
 	if err != nil {
 		panic(err)
 	}
-	defer db.Close()
 
-	driver, err := mysql.WithInstance(db, &mysql.Config{})
+	sqlDB, err := db.DB()
 	if err != nil {
-		log.Fatal(err)
+		log.Fatal("Failed to get underlying sql.DB from GORM connection")
+	}
+
+	driver, err := mysql.WithInstance(sqlDB, &mysql.Config{})
+	if err != nil {
+		log.Fatalf("Could not start sql migration: %v", err)
 	}
 
 	m, err := migrate.NewWithDatabaseInstance(
@@ -144,21 +153,28 @@ func runMigration() {
 		driver,
 	)
 	if err != nil {
-		log.Fatal(err)
+		log.Fatalf("Migration failed: %v", err)
 	}
 
 	subcommand := os.Args[2]
 	switch subcommand {
 	case "up":
 		if err := m.Up(); err != nil && err != migrate.ErrNoChange {
-			log.Fatal(err)
+			log.Fatalf("An error occurred while migrating up: %v", err)
 		}
 		fmt.Println("Migration up success")
 	case "down":
-		if err := m.Down(); err != nil && err != migrate.ErrNoChange {
-			log.Fatal(err)
+		if len(os.Args) > 3 && os.Args[3] == "--all" {
+			if err := m.Down(); err != nil && err != migrate.ErrNoChange {
+				log.Fatalf("An error occurred while migrating down all: %v", err)
+			}
+			fmt.Println("Migration down all success")
+		} else {
+			if err := m.Steps(-1); err != nil && err != migrate.ErrNoChange {
+				log.Fatalf("An error occurred while migrating one step down: %v", err)
+			}
+			fmt.Println("Migration one step down success")
 		}
-		fmt.Println("Migration down success")
 	case "force":
 		if len(os.Args) < 4 {
 			fmt.Println("Usage: go run . migrate force <version>")
@@ -169,7 +185,7 @@ func runMigration() {
 			log.Fatal("Invalid version")
 		}
 		if err := m.Force(version); err != nil {
-			log.Fatal(err)
+			log.Fatalf("An error occurred while forcing migration: %v", err)
 		}
 		fmt.Println("Migration force success")
 	default:

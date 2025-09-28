@@ -1,0 +1,1 @@
+ALTER TABLE questions MODIFY COLUMN correct_answer VARCHAR(255) NOT NULL;

@@ -1,1 +1,1 @@
-INSERT INTO users (uuid, name, email, password, role) VALUES (UUID(), 'Admin User', 'admin@example.com', '$2y$10$sInpr5RQqLWzggxdKpiBIuMwtIRf6Pgsa4JB.QQzGfDWMlyMjTtOK', 'admin');
+INSERT INTO users (uuid, name, email, password, role) VALUES (UUID(), 'Admin User', 'admin@mail.com', '$2y$10$sInpr5RQqLWzggxdKpiBIuMwtIRf6Pgsa4JB.QQzGfDWMlyMjTtOK', 'admin'), (UUID(), 'Teacher', 'teacher@mail.com', '$2y$10$sInpr5RQqLWzggxdKpiBIuMwtIRf6Pgsa4JB.QQzGfDWMlyMjTtOK', 'teacher');

@@ -5,14 +5,14 @@ import (
 )
 
 type User struct {
-	ID        int       `json:"id"`
-	UUID      string    `json:"uuid"`
-	Name      string    `json:"name"`
-	Email     string    `json:"email"`
-	Phone     *string   `json:"phone"` // Added Phone field, nullable
-	Password  string    `json:"-"` // Exclude from JSON output
-	Role      string    `json:"role"`
+	ID        uint      `gorm:"primaryKey" json:"id"`
+	UUID      string    `gorm:"type:varchar(36);uniqueIndex" json:"uuid"`
+	Name      string    `gorm:"type:varchar(255)" json:"name"`
+	Email     string    `gorm:"type:varchar(255);uniqueIndex" json:"email"`
+	Phone     *string   `gorm:"type:varchar(20)" json:"phone,omitempty"`
+	Password  string    `gorm:"type:varchar(255)" json:"-"`
+	Role      string    `gorm:"type:varchar(50)" json:"role"`
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
-	Devices   []Device  `json:"devices"` // Added Devices field
+	Devices   []Device  `gorm:"foreignKey:UserID" json:"devices,omitempty"`
 }

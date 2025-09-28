@@ -1,6 +1,6 @@
 CREATE TABLE devices (
     id INT AUTO_INCREMENT PRIMARY KEY,
-    user_id INT NOT NULL,
+    user_id INT UNSIGNED NOT NULL,
     jti CHAR(36) NOT NULL UNIQUE,
     refresh_token CHAR(36) NULL UNIQUE,
     device_info VARCHAR(255),

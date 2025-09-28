@@ -19,7 +19,7 @@ func NewUserHandler(authService *service.AuthService) *UserHandler {
 }
 
 func (h *UserHandler) UpdateAccount(c echo.Context) error {
-	userID := int(c.Get("userID").(float64))
+	userID := c.Get("userID").(uint)
 
 	req := new(dtos.UpdateAccountRequest)
 	if err := c.Bind(req); err != nil {
@@ -31,7 +31,7 @@ func (h *UserHandler) UpdateAccount(c echo.Context) error {
 		return utils.ErrorResponse(c, http.StatusBadRequest, msg)
 	}
 
-	if err := h.authService.UpdateUserAccount(int(userID), req.Name, req.Phone); err != nil {
+	if err := h.authService.UpdateUserAccount(userID, req.Name, req.Phone); err != nil {
 		if errors.Is(err, service.ErrDatabase) {
 			return utils.ErrorResponse(c, http.StatusInternalServerError, err.Error())
 		}
@@ -42,7 +42,7 @@ func (h *UserHandler) UpdateAccount(c echo.Context) error {
 }
 
 func (h *UserHandler) UpdatePassword(c echo.Context) error {
-	userID := int(c.Get("userID").(float64))
+	userID := c.Get("userID").(uint)
 
 	req := new(dtos.UpdatePasswordRequest)
 	if err := c.Bind(req); err != nil {
@@ -54,7 +54,7 @@ func (h *UserHandler) UpdatePassword(c echo.Context) error {
 		return utils.ErrorResponse(c, http.StatusBadRequest, msg)
 	}
 
-	if err := h.authService.UpdateUserPassword(int(userID), req.OldPassword, req.NewPassword); err != nil {
+	if err := h.authService.UpdateUserPassword(userID, req.OldPassword, req.NewPassword); err != nil {
 		if errors.Is(err, service.ErrUserNotFound) || errors.Is(err, service.ErrOldPasswordMismatch) {
 			return utils.ErrorResponse(c, http.StatusUnauthorized, err.Error())
 		}

@@ -65,8 +65,12 @@ func JWTAuthMiddleware(deviceRepo repository.DeviceRepository) echo.MiddlewareFu
 				}
 
 				// Set user information in context
-				c.Set("userID", claims["id"])
-				c.Set("userUUID", claims["uuid"])
+				userID, ok := claims["id"].(float64)
+				if !ok {
+					return utils.ErrorResponse(c, http.StatusUnauthorized, "Invalid user ID in token")
+				}
+				c.Set("userID", uint(userID))
+				c.Set("uuid", claims["uuid"])
 				c.Set("userEmail", claims["email"])
 				c.Set("userRole", claims["role"])
 				c.Set("jti", jti)

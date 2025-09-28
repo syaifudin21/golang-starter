@@ -1,9 +1,7 @@
 package handler
 
 import (
-	"database/sql"
 	"errors"
-	"exam/internal/model"
 	"exam/internal/service"
 	"exam/internal/utils"
 	"net/http"
@@ -12,31 +10,23 @@ import (
 )
 
 type AccountHandler struct {
-	db *sql.DB
-	authService *service.AuthService
+	authService   *service.AuthService
 	deviceService *service.DeviceService
 }
 
-func NewAccountHandler(db *sql.DB, authService *service.AuthService, deviceService *service.DeviceService) *AccountHandler {
-	return &AccountHandler{db: db, authService: authService, deviceService: deviceService}
+func NewAccountHandler(authService *service.AuthService, deviceService *service.DeviceService) *AccountHandler {
+	return &AccountHandler{authService: authService, deviceService: deviceService}
 }
 
 func (h *AccountHandler) GetAccountInfo(c echo.Context) error {
-	userID := int(c.Get("userID").(float64))
+	userUUID, ok := c.Get("uuid").(string)
+	if !ok {
+		return utils.ErrorResponse(c, http.StatusUnauthorized, "Invalid token claims")
+	}
 
-	user := &model.User{}
-	err := h.db.QueryRow("SELECT id, uuid, name, email, phone, role, created_at, updated_at FROM users WHERE id = ?", userID).Scan(
-		&user.ID,
-		&user.UUID,
-		&user.Name,
-		&user.Email,
-		&user.Phone,
-		&user.Role,
-		&user.CreatedAt,
-		&user.UpdatedAt,
-	)
+	user, err := h.authService.GetUserByUUID(userUUID)
 	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
+		if errors.Is(err, service.ErrUserNotFound) {
 			return utils.ErrorResponse(c, http.StatusNotFound, "User not found")
 		}
 		return utils.ErrorResponse(c, http.StatusInternalServerError, "Failed to retrieve user information")
@@ -46,7 +36,7 @@ func (h *AccountHandler) GetAccountInfo(c echo.Context) error {
 }
 
 func (h *AccountHandler) ListDevices(c echo.Context) error {
-	userID := int(c.Get("userID").(float64))
+	userID := c.Get("userID").(uint)
 
 	devices, err := h.deviceService.ListUserDevices(userID)
 	if err != nil {
@@ -57,7 +47,7 @@ func (h *AccountHandler) ListDevices(c echo.Context) error {
 }
 
 func (h *AccountHandler) ForceDisconnect(c echo.Context) error {
-	userID := int(c.Get("userID").(float64))
+	userID := c.Get("userID").(uint)
 	jti := c.Param("jti")
 
 	if jti == "" {

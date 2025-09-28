@@ -5,16 +5,16 @@ import (
 )
 
 type Device struct {
-	ID           int        `json:"id"`
-	UserID       int        `json:"user_id"`
-	JTI          string     `json:"jti"`
-	RefreshToken *string    `json:"refresh_token"` // Changed to *string
-	DeviceInfo   string     `json:"device_info"`
-	FCMToken     *string    `json:"fcm_token"` // Use pointer for nullable string
+	ID           uint       `gorm:"primaryKey" json:"id"`
+	UserID       uint       `json:"user_id"`
+	JTI          string     `gorm:"type:varchar(255);uniqueIndex" json:"jti"`
+	RefreshToken *string    `gorm:"type:text" json:"refresh_token"`
+	DeviceInfo   string     `gorm:"type:text" json:"device_info"`
+	FCMToken     *string    `gorm:"type:text" json:"fcm_token"`
 	LoginAt      time.Time  `json:"login_at"`
-	LogoutAt     *time.Time `json:"logout_at"` // Use pointer for nullable time
-	Latitude     *float64   `json:"latitude"`  // Use pointer for nullable decimal
-	Longitude    *float64   `json:"longitude"` // Use pointer for nullable decimal
+	LogoutAt     *time.Time `json:"logout_at"`
+	Latitude     *float64   `json:"latitude"`
+	Longitude    *float64   `json:"longitude"`
 	CreatedAt    time.Time  `json:"created_at"`
 	UpdatedAt    time.Time  `json:"updated_at"`
 }
