@@ -25,37 +25,46 @@ type InboundMessage struct {
 
 // Room maintains the set of active clients and manages the game state.
 type Room struct {
-	QuizID                   string
-	quizSessionID            uint // New field to store the ID of the current quiz session
-	State                    string
-	Clients                  map[*Client]bool
-	clientsByUserID          map[uint]*Client // New map to track clients by UserID
-	Register                 chan *Client
-	Unregister               chan *Client
-	Inbound                  chan *InboundMessage
-	quizService              *service.QuizService
-	quiz                     *model.Quiz
-	scores                   map[uint]*dtos.PlayerScore
-	currentQuestionIndex     int
-	answeredPlayers          map[uint]bool // Players who have answered the current question
+	QuizID                      string
+	quizSessionID               uint // New field to store the ID of the current quiz session
+	State                       string
+	Mode                        string           // "sync" or "parallel"
+	Clients                     map[*Client]bool
+	clientsByUserID             map[uint]*Client // New map to track clients by UserID
+	Register                    chan *Client
+	Unregister                  chan *Client
+	Inbound                     chan *InboundMessage
+	quizService                 *service.QuizService
+	quiz                        *model.Quiz
+	scores                      map[uint]*dtos.PlayerScore
+	currentQuestionIndex        int
+	answeredPlayers             map[uint]bool // Players who have answered the current question
 	isQuestionAnsweredCorrectly bool          // Flag to track if the current question has been answered correctly by anyone
+	questionTimer               *time.Timer   // Timer for the current question
+
+	// Parallel mode fields
+	clientProgress map[uint]int  // UserID -> current question index
+	finishedClients map[uint]bool // UserID -> bool
 }
 
 func NewRoom(quizID string, quizService *service.QuizService) *Room {
 	return &Room{
-		QuizID:                   quizID,
-		quizSessionID:            0, // Initialize with 0, will be set by startGame
-		State:                    StateWaiting,
-		Clients:                  make(map[*Client]bool),
-		clientsByUserID:          make(map[uint]*Client), // Initialize the new map
-		Register:                 make(chan *Client),
-		Unregister:               make(chan *Client),
-		Inbound:                  make(chan *InboundMessage),
-		quizService:              quizService,
-		scores:                   make(map[uint]*dtos.PlayerScore),
-		currentQuestionIndex:     -1,
-		answeredPlayers:          make(map[uint]bool),
+		QuizID:                      quizID,
+		quizSessionID:               0, // Initialize with 0, will be set by startGame
+		State:                       StateWaiting,
+		Mode:                        "sync", // Default mode
+		Clients:                     make(map[*Client]bool),
+		clientsByUserID:             make(map[uint]*Client), // Initialize the new map
+		Register:                    make(chan *Client),
+		Unregister:                  make(chan *Client),
+		Inbound:                     make(chan *InboundMessage),
+		quizService:                 quizService,
+		scores:                      make(map[uint]*dtos.PlayerScore),
+		currentQuestionIndex:        -1,
+		answeredPlayers:             make(map[uint]bool),
 		isQuestionAnsweredCorrectly: false,
+		clientProgress:              make(map[uint]int),
+		finishedClients:             make(map[uint]bool),
 	}
 }
 
@@ -76,17 +85,16 @@ func (r *Room) Run() {
 func (r *Room) handleInboundMessage(msg *InboundMessage) {
 	switch msg.Type {
 	case "start_game":
-		if msg.Client != nil { // Client-triggered start (deprecated)
-			log.Printf("Warning: start_game message received from client %d. Use API to start quiz.", msg.Client.UserID)
-			r.startGame(0) // Pass 0 as session ID for client-triggered start
-		} else { // API-triggered start
-			var payload struct { SessionID uint `json:"session_id"` }
-			if err := json.Unmarshal(msg.Payload, &payload); err != nil {
-				log.Printf("Error unmarshalling start_game payload: %v", err)
-				return
-			}
-			r.startGame(payload.SessionID)
+		var payload struct {
+			SessionID uint   `json:"session_id"`
+			Mode      string `json:"mode"`
 		}
+		if err := json.Unmarshal(msg.Payload, &payload); err != nil {
+			log.Printf("Error unmarshalling start_game payload: %v", err)
+			return
+		}
+		r.startGame(payload.SessionID, payload.Mode)
+
 	case "submit_answer":
 		var payload dtos.SubmitAnswerPayload
 		if err := json.Unmarshal(msg.Payload, &payload); err != nil {
@@ -97,12 +105,19 @@ func (r *Room) handleInboundMessage(msg *InboundMessage) {
 	}
 }
 
-func (r *Room) startGame(sessionID uint) {
-	if r.State != StateWaiting {
+func (r *Room) startGame(sessionID uint, mode string) {
+	if r.State == StateInProgress {
+		log.Printf("Attempted to start a game that is already in progress for room %s.", r.QuizID)
 		return
 	}
 
-	r.quizSessionID = sessionID // Store the session ID
+	// If the room is being reused, reset its state.
+	if r.State == StateFinished {
+		r.reset()
+	}
+
+	r.quizSessionID = sessionID
+	r.Mode = mode
 
 	quiz, err := r.quizService.GetQuizWithQuestions(r.QuizID)
 	if err != nil {
@@ -112,10 +127,45 @@ func (r *Room) startGame(sessionID uint) {
 	r.quiz = quiz
 	r.State = StateInProgress
 
-	log.Printf("Starting game for quiz: %s (Session ID: %d)", r.quiz.Title, r.quizSessionID)
-	r.broadcastMessage("game_starting", nil, nil)
+	log.Printf("Starting game for quiz: %s (Session ID: %d, Mode: %s)", r.quiz.Title, r.quizSessionID, r.Mode)
+	r.broadcastMessage("game_starting", map[string]string{"mode": r.Mode}, nil)
 
-	time.AfterFunc(3*time.Second, r.sendNextQuestion)
+	if r.Mode == "parallel" {
+		// Initialize progress for all players
+		for client := range r.Clients {
+			r.clientProgress[client.UserID] = 0
+		}
+		// Send the first question to everyone
+		time.AfterFunc(3*time.Second, func() {
+			for client := range r.Clients {
+				r.sendQuestionToClient(client, 0)
+			}
+		})
+	} else { // sync mode
+		time.AfterFunc(3*time.Second, r.sendNextQuestion)
+	}
+}
+
+func (r *Room) reset() {
+	log.Printf("Resetting room %s for new game.", r.QuizID)
+	r.State = StateWaiting
+	r.scores = make(map[uint]*dtos.PlayerScore)
+	r.currentQuestionIndex = -1
+	r.answeredPlayers = make(map[uint]bool)
+	r.isQuestionAnsweredCorrectly = false
+	r.clientProgress = make(map[uint]int)
+	r.finishedClients = make(map[uint]bool)
+	if r.questionTimer != nil {
+		r.questionTimer.Stop()
+	}
+
+	// Re-initialize scores for existing clients
+	for client := range r.Clients {
+		// This logic for generating UserName is duplicated from handleClientRegister
+		// Consider refactoring if it becomes more complex.
+		userName := "Player " + fmt.Sprintf("%d", client.UserID)
+		r.scores[client.UserID] = &dtos.PlayerScore{UserID: client.UserID, UserName: userName, Score: 0}
+	}
 }
 
 func (r *Room) sendNextQuestion() {
@@ -136,14 +186,43 @@ func (r *Room) sendNextQuestion() {
 		ID:      currentQuestion.ID,
 		Content: json.RawMessage(currentQuestion.Content),
 		Options: json.RawMessage(currentQuestion.Options),
+		Timer:   currentQuestion.Timer,
 	}
 
-	log.Printf("Sending question %d", r.currentQuestionIndex+1)
+	log.Printf("Sending question %d with timer %d seconds", r.currentQuestionIndex+1, currentQuestion.Timer)
 	r.broadcastMessage("next_question", questionDTO, nil)
+
+	// If the timer is > 0, start a countdown.
+	if currentQuestion.Timer > 0 {
+		if r.questionTimer != nil {
+			r.questionTimer.Stop()
+		}
+		r.questionTimer = time.AfterFunc(time.Duration(currentQuestion.Timer)*time.Second, r.timeUp)
+	}
+}
+
+func (r *Room) timeUp() {
+	log.Printf("Time is up for question %d in room %s", r.currentQuestionIndex+1, r.QuizID)
+	r.broadcastMessage("time_up", nil, nil)
+
+	// Wait a bit before sending the next question
+	time.AfterFunc(2*time.Second, r.sendNextQuestion)
 }
 
 func (r *Room) handleSubmitAnswer(client *Client, payload dtos.SubmitAnswerPayload) {
-	if r.State != StateInProgress || r.answeredPlayers[client.UserID] {
+	if r.State != StateInProgress {
+		return
+	}
+
+	if r.Mode == "parallel" {
+		r.handleParallelAnswer(client, payload)
+	} else {
+		r.handleSyncAnswer(client, payload)
+	}
+}
+
+func (r *Room) handleSyncAnswer(client *Client, payload dtos.SubmitAnswerPayload) {
+	if r.answeredPlayers[client.UserID] {
 		return
 	}
 
@@ -199,8 +278,96 @@ func (r *Room) handleSubmitAnswer(client *Client, payload dtos.SubmitAnswerPaylo
 
 	if len(r.answeredPlayers) == len(r.Clients) {
 		log.Println("All players have answered. Moving to next question.")
+		if r.questionTimer != nil {
+			r.questionTimer.Stop()
+		}
 		time.AfterFunc(2*time.Second, r.sendNextQuestion)
 	}
+}
+
+func (r *Room) handleParallelAnswer(client *Client, payload dtos.SubmitAnswerPayload) {
+	// Prevent processing if client has already finished
+	if r.finishedClients[client.UserID] {
+		log.Printf("Client %d submitted answer after finishing the quiz.", client.UserID)
+		return
+	}
+
+	currentQuestionIndex, ok := r.clientProgress[client.UserID]
+	if !ok {
+		log.Printf("Client %d not found in progress map for parallel quiz", client.UserID)
+		return
+	}
+
+	// Server trusts its own state about which question the client is on.
+	question := r.quiz.Questions[currentQuestionIndex]
+
+	// --- Scoring logic (simplified for parallel) ---
+	isCorrect := payload.Answer == question.CorrectAnswer
+	if isCorrect {
+		r.scores[client.UserID].Score += 10 // Simple scoring
+	}
+
+	// Record the answer
+	if r.quizSessionID != 0 {
+		answerRecord := &model.QuizAnswer{
+			QuizSessionID: r.quizSessionID,
+			QuestionID:    question.ID, // Use server's question ID
+			UserID:        client.UserID,
+			Answer:        payload.Answer,
+			IsCorrect:     isCorrect,
+			SubmittedAt:   time.Now(),
+		}
+		if err := r.quizService.RecordQuizAnswer(answerRecord); err != nil {
+			log.Printf("Error recording quiz answer for session %d: %v", r.quizSessionID, err)
+		}
+	}
+
+	// Send immediate feedback to the user
+	resultPayload := dtos.AnswerResultPayload{
+		QuestionID: question.ID, // Use server's question ID
+		IsCorrect:  isCorrect,
+		PlayerID:   client.UserID,
+		PlayerName: r.scores[client.UserID].UserName,
+	}
+	r.sendMessageToClient(client, "answer_result", resultPayload)
+
+	// Update progress and send next question
+	r.clientProgress[client.UserID]++
+	r.sendQuestionToClient(client, r.clientProgress[client.UserID])
+
+	// Broadcast score update to everyone
+	var scoreList []dtos.PlayerScore
+	for _, s := range r.scores {
+		scoreList = append(scoreList, *s)
+	}
+	r.broadcastMessage("score_update", dtos.ScoreUpdatePayload{Scores: scoreList}, nil)
+}
+
+func (r *Room) sendQuestionToClient(client *Client, questionIndex int) {
+	if questionIndex >= len(r.quiz.Questions) {
+		// All questions answered by this client
+		r.finishedClients[client.UserID] = true
+		log.Printf("Client %d has finished the quiz.", client.UserID)
+		r.sendMessageToClient(client, "quiz_complete", nil)
+
+		// Check if all clients are finished
+		if len(r.finishedClients) == len(r.Clients) {
+			log.Printf("All clients have finished the parallel quiz.")
+		r.endGame()
+		}
+		return
+	}
+
+	question := r.quiz.Questions[questionIndex]
+	questionDTO := dtos.QuizQuestionDTO{
+		ID:      question.ID,
+		Content: json.RawMessage(question.Content),
+		Options: json.RawMessage(question.Options),
+		Timer:   question.Timer,
+	}
+
+	log.Printf("Sending question %d to client %d", questionIndex+1, client.UserID)
+	r.sendMessageToClient(client, "next_question", questionDTO)
 }
 
 func (r *Room) endGame() {
@@ -285,5 +452,27 @@ func (r *Room) broadcastMessage(msgType string, payload interface{}, exclude *Cl
 				delete(r.Clients, client)
 			}
 		}
+	}
+}
+
+func (r *Room) sendMessageToClient(client *Client, msgType string, payload interface{}) {
+	payloadBytes, err := json.Marshal(payload)
+	if err != nil {
+		log.Printf("Error marshalling payload for sendMessageToClient: %v", err)
+		return
+	}
+
+	msg := dtos.WebsocketMessage{Type: msgType, Payload: payloadBytes}
+	msgBytes, err := json.Marshal(msg)
+	if err != nil {
+		log.Printf("Error marshalling message for sendMessageToClient: %v", err)
+		return
+	}
+
+	select {
+	case client.Send <- msgBytes:
+	default:
+		// Assume the client is disconnected and handle it.
+		r.handleClientUnregister(client)
 	}
 }

@@ -14,6 +14,7 @@ type Question struct {
 	Content        datatypes.JSON `gorm:"type:json" json:"content"` // Changed from QuestionText
 	Options        datatypes.JSON `gorm:"type:json" json:"options"`
 	CorrectAnswer  string         `gorm:"type:varchar(255)" json:"correct_answer"`
+	Timer          int            `gorm:"not null;default:30" json:"timer"`
 	CreatedAt      time.Time      `json:"created_at"`
 	UpdatedAt      time.Time      `json:"updated_at"`
 }

@@ -16,7 +16,7 @@ import (
 type QuizRoomManager interface {
 	GetRoomClientCount(quizUUID string) int
 	GetRoomClients(quizUUID string) []dtos.ConnectedStudentDTO
-	StartQuizInRoom(quizUUID string, sessionID uint) error
+	StartQuizInRoom(quizUUID string, sessionID uint, mode string) error
 }
 
 // ... (rest of QuizService struct and NewQuizService function)
@@ -25,7 +25,7 @@ func (s *QuizService) ListConnectedStudents(quizUUID string) []dtos.ConnectedStu
 	return s.hub.GetRoomClients(quizUUID)
 }
 
-func (s *QuizService) StartQuiz(quizUUID string) error {
+func (s *QuizService) StartQuiz(quizUUID string, req dtos.StartQuizRequest) error {
 	// First, check if the quiz exists and is valid
 	quiz, err := s.quizRepo.GetQuizByUUID(quizUUID)
 	if err != nil {
@@ -39,16 +39,17 @@ func (s *QuizService) StartQuiz(quizUUID string) error {
 	now := time.Now()
 	participantsJSON, _ := json.Marshal(s.hub.GetRoomClients(quizUUID))
 	session := &model.QuizSession{
-		QuizUUID:    quizUUID,
-		StartedAt:   now,
+		QuizUUID:     quizUUID,
+		Mode:         req.Mode,
+		StartedAt:    now,
 		Participants: datatypes.JSON(participantsJSON),
 	}
 	if err := s.quizRepo.CreateQuizSession(session); err != nil {
 		return fmt.Errorf("failed to create quiz session: %w", err)
 	}
 
-	// Then, tell the hub to start the quiz in the room, passing the session ID
-	return s.hub.StartQuizInRoom(quizUUID, session.ID)
+	// Then, tell the hub to start the quiz in the room, passing the session ID and mode
+	return s.hub.StartQuizInRoom(quizUUID, session.ID, req.Mode)
 }
 
 func (s *QuizService) EndQuizSession(sessionID uint, finalScores []dtos.PlayerScore) error {
@@ -128,6 +129,7 @@ func (s *QuizService) AddQuestion(req dtos.AddQuestionRequest, quizUUID string) 
 		Content:       datatypes.JSON(contentJSON),
 		Options:       datatypes.JSON(optionsJSON),
 		CorrectAnswer: req.CorrectAnswer,
+		Timer:         req.Timer,
 	}
 
 	if err := s.quizRepo.AddQuestion(question); err != nil {
@@ -215,6 +217,9 @@ func (s *QuizService) UpdateQuestion(quizUUID string, questionUUID string, req d
 	}
 	if req.CorrectAnswer != nil {
 		questionToUpdate.CorrectAnswer = *req.CorrectAnswer
+	}
+	if req.Timer != nil {
+		questionToUpdate.Timer = *req.Timer
 	}
 
 	if err := s.quizRepo.UpdateQuestion(questionToUpdate); err != nil {

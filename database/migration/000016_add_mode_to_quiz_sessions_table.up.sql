@@ -1,0 +1,1 @@
+ALTER TABLE quiz_sessions ADD COLUMN mode VARCHAR(20) NOT NULL DEFAULT 'sync';

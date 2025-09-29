@@ -66,12 +66,18 @@ func (h *Hub) GetRoomClients(quizUUID string) []dtos.ConnectedStudentDTO {
 	return students
 }
 
-func (h *Hub) StartQuizInRoom(quizUUID string, sessionID uint) error {
+func (h *Hub) StartQuizInRoom(quizUUID string, sessionID uint, mode string) error {
 	if room, ok := h.Rooms[quizUUID]; ok {
-		// Marshal the session ID into a JSON payload
-		payload, err := json.Marshal(struct { SessionID uint `json:"session_id"` }{ SessionID: sessionID })
+		// Marshal the session ID and mode into a JSON payload
+		payload, err := json.Marshal(struct {
+			SessionID uint   `json:"session_id"`
+			Mode      string `json:"mode"`
+		}{
+			SessionID: sessionID,
+			Mode:      mode,
+		})
 		if err != nil {
-			return fmt.Errorf("failed to marshal session ID: %w", err)
+			return fmt.Errorf("failed to marshal start_game payload: %w", err)
 		}
 		// Send a message to the room's inbound channel to start the game
 		// This simulates the "start_game" websocket message but from the API

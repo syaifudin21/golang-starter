@@ -159,7 +159,17 @@ func (h *QuizHandler) StartQuiz(c echo.Context) error {
 		return utils.ErrorResponse(c, http.StatusBadRequest, "Quiz UUID is required")
 	}
 
-	err := h.quizService.StartQuiz(quizUUID)
+	req := new(dtos.StartQuizRequest)
+	if err := c.Bind(req); err != nil {
+		return utils.ErrorResponse(c, http.StatusBadRequest, "Invalid request body")
+	}
+
+	lang := c.Request().Header.Get("Accept-Language")
+	if msg, ok := utils.ValidateStruct(req, lang); !ok {
+		return utils.ErrorResponse(c, http.StatusBadRequest, msg)
+	}
+
+	err := h.quizService.StartQuiz(quizUUID, *req)
 	if err != nil {
 		return utils.ErrorResponse(c, http.StatusInternalServerError, err.Error())
 	}

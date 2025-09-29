@@ -29,6 +29,7 @@ type QuizQuestionDTO struct {
 	ID      uint            `json:"id"`
 	Content json.RawMessage `json:"content"`
 	Options json.RawMessage `json:"options"`
+	Timer   int             `json:"timer"`
 }
 
 // AnswerResultPayload announces the result of an answer submission.

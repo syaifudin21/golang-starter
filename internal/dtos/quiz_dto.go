@@ -23,6 +23,7 @@ type AddQuestionRequest struct {
 	Content       QuestionContent  `json:"content" validate:"required"`
 	Options       []QuestionOption `json:"options" validate:"required"`
 	CorrectAnswer string           `json:"correct_answer" validate:"required"`
+	Timer         int              `json:"timer" validate:"required,min=0"`
 }
 
 // UpdateQuizRequest defines the structure for updating an existing quiz.
@@ -36,4 +37,10 @@ type UpdateQuestionRequest struct {
 	Content       *QuestionContent  `json:"content" validate:"omitempty"`
 	Options       []QuestionOption `json:"options" validate:"omitempty"`
 	CorrectAnswer *string           `json:"correct_answer" validate:"omitempty"`
+	Timer         *int             `json:"timer,omitempty" validate:"omitempty,min=0"`
+}
+
+// StartQuizRequest defines the structure for starting a quiz.
+type StartQuizRequest struct {
+	Mode string `json:"mode" validate:"required,oneof=sync parallel"`
 }
