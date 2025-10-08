@@ -65,6 +65,9 @@ func runAPI() {
 
 	e := echo.New()
 
+	// Serve static files from the 'uploads' directory
+	e.Static("/uploads", "uploads")
+
 	modelPath := filepath.Join("internal", "config", "rbac_model.conf")
 	policyPath := filepath.Join("internal", "config", "policy.csv")
 	enforcer, err := casbin.NewEnforcer(modelPath, policyPath)
@@ -85,11 +88,13 @@ func runAPI() {
 	userRepo := repository.NewUserRepository(db)
 	deviceRepo := repository.NewDeviceRepository(db)
 	quizRepo := repository.NewQuizRepository(db)
+	uploadedFileRepo := repository.NewUploadedFileRepository(db)
 
 	// Initialize services
 	deviceService := service.NewDeviceService(deviceRepo)
 	authService := service.NewAuthService(userRepo, deviceRepo)
 	quizService := service.NewQuizService(quizRepo, hub)
+	fileService := service.NewFileService(uploadedFileRepo)
 
 	// Initialize handlers
 	authHandler := handler.NewAuthHandler(authService, googleOauthConfig)
@@ -97,6 +102,7 @@ func runAPI() {
 	userHandler := handler.NewUserHandler(authService)
 	quizHandler := handler.NewQuizHandler(quizService)
 	websocketHandler := handler.NewWebsocketHandler(hub, quizService)
+	fileHandler := handler.NewFileHandler(fileService)
 
 	// Register health check
 	e.GET("/health", func(c echo.Context) error {
@@ -116,7 +122,7 @@ func runAPI() {
 	v1 := e.Group("/api/v1")
 	v1.Use(middleware.JWTAuthMiddleware(deviceRepo))
 	v1.Use(middleware.CasbinAuthMiddleware(enforcer))
-	routes.APIRoutes(v1, authHandler, accountHandler, userHandler, quizHandler, websocketHandler)
+	routes.APIRoutes(v1, authHandler, accountHandler, userHandler, quizHandler, websocketHandler, fileHandler)
 
 	port := os.Getenv("PORT")
 	if port == "" {

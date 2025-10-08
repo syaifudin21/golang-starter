@@ -6,7 +6,7 @@ import (
 	"github.com/labstack/echo/v4"
 )
 
-func APIRoutes(g *echo.Group, authHandler *handler.AuthHandler, accountHandler *handler.AccountHandler, userHandler *handler.UserHandler, quizHandler *handler.QuizHandler, websocketHandler *handler.WebsocketHandler) {
+func APIRoutes(g *echo.Group, authHandler *handler.AuthHandler, accountHandler *handler.AccountHandler, userHandler *handler.UserHandler, quizHandler *handler.QuizHandler, websocketHandler *handler.WebsocketHandler, fileHandler *handler.FileHandler) {
 	g.GET("/account", accountHandler.GetAccountInfo)
 	g.PUT("/account", userHandler.UpdateAccount)
 	g.PUT("/password", userHandler.UpdatePassword)
@@ -32,4 +32,8 @@ func APIRoutes(g *echo.Group, authHandler *handler.AuthHandler, accountHandler *
 
 	// Websocket route
 	g.GET("/quiz/join/:quizUUID", websocketHandler.ServeWs)
+
+	// File upload route
+	g.POST("/upload", fileHandler.UploadFile)
+	g.GET("/files", fileHandler.GetMyFiles)
 }
