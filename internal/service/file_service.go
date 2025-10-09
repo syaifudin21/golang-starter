@@ -25,7 +25,7 @@ func NewFileService(uploadedFileRepository *repository.UploadedFileRepository) *
 	return &FileService{uploadedFileRepository: uploadedFileRepository}
 }
 
-func (s *FileService) SaveFile(file *multipart.FileHeader, filename string, userID uint) (string, error) {
+func (s *FileService) SaveFile(file multipart.File, header *multipart.FileHeader, filename string, userID uint) (string, error) {
 	// Create the uploads directory if it's not exist
 	uploadsDir := "./uploads"
 	if _, err := os.Stat(uploadsDir); os.IsNotExist(err) {
@@ -37,19 +37,13 @@ func (s *FileService) SaveFile(file *multipart.FileHeader, filename string, user
 
 	filePath := filepath.Join(uploadsDir, filename)
 
-	src, err := file.Open()
-	if err != nil {
-		return "", fmt.Errorf("failed to open uploaded file: %w", err)
-	}
-	defer src.Close()
-
 	dst, err := os.Create(filePath)
 	if err != nil {
 		return "", fmt.Errorf("failed to create destination file: %w", err)
 	}
 	defer dst.Close()
 
-	if _, err = io.Copy(dst, src); err != nil {
+	if _, err = io.Copy(dst, file); err != nil {
 		return "", fmt.Errorf("failed to copy file content: %w", err)
 	}
 
@@ -125,10 +119,10 @@ func (s *FileService) SaveFile(file *multipart.FileHeader, filename string, user
 	uploadedFile := &model.UploadedFile{
 		UUID:      uuid.New().String(),
 		UserID:    userID,
-		FileName:  file.Filename,
+		FileName:  header.Filename,
 		FilePath:  storedFilePath, // Use storedFilePath here
-		FileSize:  file.Size,
-		MimeType:  file.Header.Get("Content-Type"),
+		FileSize:  header.Size,
+		MimeType:  header.Header.Get("Content-Type"),
 	}
 
 	if err := s.uploadedFileRepository.CreateUploadedFile(uploadedFile); err != nil {

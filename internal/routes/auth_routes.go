@@ -14,4 +14,5 @@ func AuthRoutes(e *echo.Echo, authHandler *handler.AuthHandler) {
 	// Google OAuth routes
 	e.GET("/auth/google/login", authHandler.GoogleLogin)
 	e.GET("/auth/google/callback", authHandler.GoogleCallback)
+	e.POST("/auth/google/token", authHandler.GoogleLoginWithToken)
 }

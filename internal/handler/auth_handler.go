@@ -125,7 +125,7 @@ func (h *AuthHandler) GoogleCallback(c echo.Context) error {
 	}
 
 	// Use the token to get user info from Google
-	userInfo, err := h.authService.GetGoogleUserInfo(token.AccessToken)
+	userInfo, err := h.authService.GetGoogleUserInfoFromAccessToken(token.AccessToken)
 	if err != nil {
 		return utils.ErrorResponse(c, http.StatusInternalServerError, "Failed to get user info from Google: "+err.Error())
 	}
@@ -137,4 +137,25 @@ func (h *AuthHandler) GoogleCallback(c echo.Context) error {
 	}
 
 	return utils.SuccessResponse(c, "Google login successful", loginResp)
+}
+
+func (h *AuthHandler) GoogleLoginWithToken(c echo.Context) error {
+	req := new(dtos.GoogleLoginRequest)
+	if err := c.Bind(req); err != nil {
+		return utils.ErrorResponse(c, http.StatusBadRequest, "Invalid request body")
+	}
+
+	lang := c.Request().Header.Get("Accept-Language")
+	if msg, ok := utils.ValidateStruct(req, lang); !ok {
+		return utils.ErrorResponse(c, http.StatusBadRequest, msg)
+	}
+
+	deviceInfo := c.Request().UserAgent()
+
+	resp, err := h.authService.GoogleLoginWithToken(req.Credential, deviceInfo)
+	if err != nil {
+		return utils.ErrorResponse(c, http.StatusInternalServerError, err.Error())
+	}
+
+	return utils.SuccessResponse(c, "Google login successful", resp)
 }

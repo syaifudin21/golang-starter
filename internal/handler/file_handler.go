@@ -43,11 +43,50 @@ func (h *FileHandler) UploadFile(c echo.Context) error {
 		return utils.ErrorResponse(c, http.StatusBadRequest, fmt.Sprintf("Failed to get file from form: %v", err))
 	}
 
+	// Open the file to check its content type
+	src, err := file.Open()
+	if err != nil {
+		return utils.ErrorResponse(c, http.StatusInternalServerError, fmt.Sprintf("Failed to open file: %v", err))
+	}
+	defer src.Close()
+
+	// Read the first 512 bytes to determine the content type
+	buffer := make([]byte, 512)
+	_, err = src.Read(buffer)
+	if err != nil {
+		return utils.ErrorResponse(c, http.StatusInternalServerError, fmt.Sprintf("Failed to read file: %v", err))
+	}
+
+	// Reset the file read pointer
+	_, err = src.Seek(0, 0)
+	if err != nil {
+		return utils.ErrorResponse(c, http.StatusInternalServerError, fmt.Sprintf("Failed to reset file read pointer: %v", err))
+	}
+
+	// Get the content type
+	contentType := http.DetectContentType(buffer)
+
+	// Check if the content type is allowed
+	allowedTypes := map[string]bool{
+		"image/jpeg": true,
+		"image/png":  true,
+		"image/gif":  true,
+		"image/webp": true,
+		"audio/mpeg": true,
+		"audio/wav":  true,
+		"audio/ogg":  true,
+		"audio/mp4":  true,
+	}
+
+	if !allowedTypes[contentType] {
+		return utils.ErrorResponse(c, http.StatusBadRequest, fmt.Sprintf("File type not allowed: %s", contentType))
+	}
+
 	// Generate a unique filename
 	extension := filepath.Ext(file.Filename)
 	newFileName := uuid.New().String() + extension
 
-	filePath, err := h.fileService.SaveFile(file, newFileName, userID)
+	filePath, err := h.fileService.SaveFile(src, file, newFileName, userID)
 	if err != nil {
 		return utils.ErrorResponse(c, http.StatusInternalServerError, fmt.Sprintf("Failed to save file: %v", err))
 	}

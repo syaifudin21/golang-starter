@@ -22,6 +22,7 @@ import (
 	_ "github.com/golang-migrate/migrate/v4/source/file"
 	"github.com/joho/godotenv"
 	"github.com/labstack/echo/v4"
+	echoMiddleware "github.com/labstack/echo/v4/middleware"
 	"golang.org/x/oauth2"
 	"golang.org/x/oauth2/google"
 )
@@ -65,6 +66,14 @@ func runAPI() {
 
 	e := echo.New()
 
+	// Enable CORS with a more explicit configuration
+	e.Use(echoMiddleware.CORSWithConfig(echoMiddleware.CORSConfig{
+		AllowOrigins: []string{"*"},
+		AllowMethods: []string{echo.GET, echo.HEAD, echo.PUT, echo.POST, echo.DELETE, echo.OPTIONS},
+		AllowHeaders: []string{echo.HeaderOrigin, echo.HeaderContentType, echo.HeaderAccept, echo.HeaderAuthorization, echo.HeaderXRequestedWith, echo.HeaderContentLength, echo.HeaderContentDisposition, echo.HeaderCacheControl, echo.HeaderSetCookie},
+		AllowCredentials: true,
+	}))
+
 	// Serve static files from the 'uploads' directory
 	e.Static("/uploads", "uploads")
 
@@ -92,7 +101,7 @@ func runAPI() {
 
 	// Initialize services
 	deviceService := service.NewDeviceService(deviceRepo)
-	authService := service.NewAuthService(userRepo, deviceRepo)
+	authService := service.NewAuthService(userRepo, deviceRepo, googleOauthConfig.ClientID)
 	quizService := service.NewQuizService(quizRepo, hub)
 	fileService := service.NewFileService(uploadedFileRepo)
 

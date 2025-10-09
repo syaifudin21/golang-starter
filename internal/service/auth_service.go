@@ -31,12 +31,13 @@ var (
 )
 
 type AuthService struct {
-	userRepo   repository.UserRepository
-	deviceRepo repository.DeviceRepository
+	userRepo          repository.UserRepository
+	deviceRepo        repository.DeviceRepository
+	googleClientID    string
 }
 
-func NewAuthService(userRepo repository.UserRepository, deviceRepo repository.DeviceRepository) *AuthService {
-	return &AuthService{userRepo: userRepo, deviceRepo: deviceRepo}
+func NewAuthService(userRepo repository.UserRepository, deviceRepo repository.DeviceRepository, googleClientID string) *AuthService {
+	return &AuthService{userRepo: userRepo, deviceRepo: deviceRepo, googleClientID: googleClientID}
 }
 
 func (s *AuthService) Register(req dtos.RegisterRequest) (*model.User, error) {
@@ -206,8 +207,8 @@ func (s *AuthService) UpdateUserRole(userUUID string, newRole string) error {
 	return s.userRepo.UpdateUser(user)
 }
 
-// GetGoogleUserInfo fetches user info from Google using the access token.
-func (s *AuthService) GetGoogleUserInfo(accessToken string) (*dtos.GoogleUserInfo, error) {
+// GetGoogleUserInfoFromAccessToken fetches user info from Google using the access token.
+func (s *AuthService) GetGoogleUserInfoFromAccessToken(accessToken string) (*dtos.GoogleUserInfo, error) {
 	resp, err := http.Get("https://www.googleapis.com/oauth2/v2/userinfo?access_token=" + accessToken)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get user info from Google: %w", err)
@@ -226,6 +227,36 @@ func (s *AuthService) GetGoogleUserInfo(accessToken string) (*dtos.GoogleUserInf
 	var userInfo dtos.GoogleUserInfo
 	if err := json.Unmarshal(contents, &userInfo); err != nil {
 		return nil, fmt.Errorf("failed to unmarshal Google user info: %w", err)
+	}
+
+	return &userInfo, nil
+}
+
+// GetGoogleUserInfoFromIDToken verifies the Google ID token and fetches user info from it.
+func (s *AuthService) GetGoogleUserInfoFromIDToken(idToken string) (*dtos.GoogleUserInfo, error) {
+	resp, err := http.Get("https://oauth2.googleapis.com/tokeninfo?id_token=" + idToken)
+	if err != nil {
+		return nil, fmt.Errorf("failed to verify Google ID token: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("failed to verify Google ID token, status: %s", resp.Status)
+	}
+
+	contents, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read Google ID token verification response: %w", err)
+	}
+
+	var userInfo dtos.GoogleUserInfo
+	if err := json.Unmarshal(contents, &userInfo); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal Google user info from ID token: %w", err)
+	}
+
+	// Basic validation: ensure audience matches
+	if userInfo.Aud != s.googleClientID {
+		return nil, fmt.Errorf("Google ID token audience mismatch: expected %s, got %s", s.googleClientID, userInfo.Aud)
 	}
 
 	return &userInfo, nil
@@ -254,6 +285,20 @@ func (s *AuthService) LoginWithGoogle(userInfo *dtos.GoogleUserInfo, deviceInfo 
 
 	// Generate and save tokens for the user
 	return s.generateAndSaveTokens(user, nil, nil, nil, deviceInfo)
+}
+
+func (s *AuthService) GoogleLoginWithToken(credential string, deviceInfo string) (*dtos.LoginResponse, error) {
+	userInfo, err := s.GetGoogleUserInfoFromIDToken(credential)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get user info from Google ID token: %w", err)
+	}
+
+	loginResp, err := s.LoginWithGoogle(userInfo, deviceInfo)
+	if err != nil {
+		return nil, fmt.Errorf("failed to login/register with Google: %w", err)
+	}
+
+	return loginResp, nil
 }
 
 // generateAndSaveTokens is a helper to create JWT and refresh tokens and save device info.

@@ -23,6 +23,7 @@ type GoogleUserInfo struct {
 	FamilyName    string `json:"family_name"`
 	Picture       string `json:"picture"`
 	Locale        string `json:"locale"`
+	Aud           string `json:"aud"` // Audience claim
 }
 
 type RefreshTokenRequest struct {
@@ -34,4 +35,8 @@ type RegisterRequest struct {
 	Name     string `json:"name" validate:"required,min=3"`
 	Email    string `json:"email" validate:"required,email"`
 	Password string `json:"password" validate:"required,min=8"`
+}
+
+type GoogleLoginRequest struct {
+	Credential string `json:"credential" validate:"required"`
 }
