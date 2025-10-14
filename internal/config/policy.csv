@@ -39,3 +39,4 @@ p, teacher, /api/v1/quiz/join/:quizUUID, GET
 p, teacher, /api/v1/quizzes/:quizID/start, POST
 p, teacher, /api/v1/upload, POST
 p, teacher, /api/v1/files, GET
+p, teacher, /api/v1/files/:uuid, DELETE

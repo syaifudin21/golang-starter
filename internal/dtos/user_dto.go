@@ -1,5 +1,7 @@
 package dtos
 
+import "exam/internal/model"
+
 type UpdateAccountRequest struct {
 	Name  string  `json:"name" validate:"required"`
 	Phone *string `json:"phone"`
@@ -11,5 +13,12 @@ type UpdatePasswordRequest struct {
 }
 
 type UpdateUserRoleRequest struct {
-	Role string `json:"role" validate:"required"`
+	Role string `json:"role" validate:"required,oneof=admin student"`
+}
+
+type UserListResponse struct {
+	Data     []model.User `json:"data"`
+	Total    int64        `json:"total"`
+	Page     int          `json:"page"`
+	PageSize int          `json:"pageSize"`
 }

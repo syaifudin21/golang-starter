@@ -5,6 +5,7 @@ import (
 	"exam/internal/service"
 	"exam/internal/utils"
 	"net/http"
+	"strconv"
 
 	"github.com/labstack/echo/v4"
 )
@@ -60,11 +61,34 @@ func (h *QuizHandler) AddQuestion(c echo.Context) error {
 }
 
 func (h *QuizHandler) ListQuizzes(c echo.Context) error {
-	quizzes, err := h.quizService.ListAllQuizzes()
+	keyword := c.QueryParam("keyword")
+	page, err := strconv.Atoi(c.QueryParam("page"))
+	if err != nil || page < 1 {
+		page = 1
+	}
+
+	pageSize, err := strconv.Atoi(c.QueryParam("pageSize"))
+	if err != nil || pageSize <= 0 {
+		pageSize = 10
+	}
+
+	quizResponse, err := h.quizService.ListAllQuizzes(keyword, page, pageSize)
 	if err != nil {
 		return utils.ErrorResponse(c, http.StatusInternalServerError, err.Error())
 	}
-	return utils.SuccessResponse(c, "Quizzes retrieved successfully", quizzes)
+
+	totalPages := (quizResponse.Total + int64(pageSize) - 1) / int64(pageSize)
+
+	return c.JSON(http.StatusOK, echo.Map{
+		"message": "Quizzes retrieved successfully",
+		"data":    quizResponse.Data,
+		"pagination": echo.Map{
+			"totalCount":  quizResponse.Total,
+			"totalPages":  totalPages,
+			"currentPage": page,
+			"pageSize":    pageSize,
+		},
+	})
 }
 
 func (h *QuizHandler) GetQuiz(c echo.Context) error {

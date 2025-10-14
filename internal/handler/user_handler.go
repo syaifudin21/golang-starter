@@ -6,6 +6,7 @@ import (
 	"exam/internal/service"
 	"exam/internal/utils"
 	"net/http"
+	"strconv"
 
 	"github.com/labstack/echo/v4"
 )
@@ -65,12 +66,36 @@ func (h *UserHandler) UpdatePassword(c echo.Context) error {
 }
 
 func (h *UserHandler) ListUsers(c echo.Context) error {
-	users, err := h.authService.ListAllUsers()
+	keyword := c.QueryParam("keyword")
+	role := c.QueryParam("role")
+
+	page, err := strconv.Atoi(c.QueryParam("page"))
+	if err != nil || page < 1 {
+		page = 1
+	}
+
+	pageSize, err := strconv.Atoi(c.QueryParam("pageSize"))
+	if err != nil || pageSize <= 0 {
+		pageSize = 10
+	}
+
+	userResponse, err := h.authService.ListAllUsers(keyword, role, page, pageSize)
 	if err != nil {
 		return utils.ErrorResponse(c, http.StatusInternalServerError, err.Error())
 	}
 
-	return utils.SuccessResponse(c, "Users retrieved successfully", users)
+	totalPages := (userResponse.Total + int64(pageSize) - 1) / int64(pageSize)
+
+	return c.JSON(http.StatusOK, echo.Map{
+		"message": "Users retrieved successfully",
+		"data":    userResponse.Data,
+		"pagination": echo.Map{
+			"totalCount":  userResponse.Total,
+			"totalPages":  totalPages,
+			"currentPage": page,
+			"pageSize":    pageSize,
+		},
+	})
 }
 
 func (h *UserHandler) GetUser(c echo.Context) error {

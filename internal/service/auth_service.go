@@ -167,12 +167,23 @@ func (s *AuthService) UpdateUserPassword(userID uint, oldPassword string, newPas
 	return s.userRepo.UpdateUser(user)
 }
 
-func (s *AuthService) ListAllUsers() ([]model.User, error) {
-	users, err := s.userRepo.ListAllUsers()
+func (s *AuthService) ListAllUsers(keyword, role string, page, pageSize int) (*dtos.UserListResponse, error) {
+	users, err := s.userRepo.ListAllUsers(keyword, role, page, pageSize)
 	if err != nil {
 		return nil, fmt.Errorf("%w: %v", ErrDatabase, err)
 	}
-	return users, nil
+
+	total, err := s.userRepo.CountAllUsers(keyword, role)
+	if err != nil {
+		return nil, fmt.Errorf("%w: %v", ErrDatabase, err)
+	}
+
+	return &dtos.UserListResponse{
+		Data:     users,
+		Total:    total,
+		Page:     page,
+		PageSize: pageSize,
+	}, nil
 }
 
 func (s *AuthService) GetUserByUUID(userUUID string) (*model.User, error) {

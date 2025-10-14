@@ -25,7 +25,7 @@ func NewFileService(uploadedFileRepository *repository.UploadedFileRepository) *
 	return &FileService{uploadedFileRepository: uploadedFileRepository}
 }
 
-func (s *FileService) SaveFile(file multipart.File, header *multipart.FileHeader, filename string, userID uint) (string, error) {
+func (s *FileService) SaveFile(file multipart.File, header *multipart.FileHeader, uniqueFilename string, customName string, userID uint) (string, error) {
 	// Create the uploads directory if it's not exist
 	uploadsDir := "./uploads"
 	if _, err := os.Stat(uploadsDir); os.IsNotExist(err) {
@@ -35,7 +35,7 @@ func (s *FileService) SaveFile(file multipart.File, header *multipart.FileHeader
 		}
 	}
 
-	filePath := filepath.Join(uploadsDir, filename)
+	filePath := filepath.Join(uploadsDir, uniqueFilename)
 
 	dst, err := os.Create(filePath)
 	if err != nil {
@@ -97,6 +97,18 @@ func (s *FileService) SaveFile(file multipart.File, header *multipart.FileHeader
 		defer localFile.Close()
 
 		ftpFileName := filepath.Base(filePath) // Use only the filename, not the full local path
+
+		// Check if a temporary file from a previous failed upload exists and delete it
+		tempFtpFileName := ".in." + ftpFileName
+		if _, err := conn.FileSize(tempFtpFileName); err == nil {
+			// File exists, attempt to delete it
+			fmt.Printf("Warning: Temporary FTP file %s found, attempting to delete.\n", tempFtpFileName)
+			if err := conn.Delete(tempFtpFileName); err != nil {
+				fmt.Printf("Error: Failed to delete temporary FTP file %s: %v\n", tempFtpFileName, err)
+				// Continue with upload, but log the error
+			}
+		}
+
 		err = conn.Stor(ftpFileName, localFile)
 		if err != nil {
 			return "", fmt.Errorf("failed to upload file to FTP: %w", err)
@@ -115,11 +127,17 @@ func (s *FileService) SaveFile(file multipart.File, header *multipart.FileHeader
 		storedFilePath = filePath // Store local path
 	}
 
+	// Determine the name to save in the database
+	dbFileName := header.Filename
+	if customName != "" {
+		dbFileName = customName
+	}
+
 	// Save file metadata to database
 	uploadedFile := &model.UploadedFile{
 		UUID:      uuid.New().String(),
 		UserID:    userID,
-		FileName:  header.Filename,
+		FileName:  dbFileName,
 		FilePath:  storedFilePath, // Use storedFilePath here
 		FileSize:  header.Size,
 		MimeType:  header.Header.Get("Content-Type"),
@@ -132,6 +150,61 @@ func (s *FileService) SaveFile(file multipart.File, header *multipart.FileHeader
 	return finalFilePath, nil
 }
 
-func (s *FileService) GetFilesByUserID(userID uint, limit, offset int) ([]model.UploadedFile, int64, error) {
-	return s.uploadedFileRepository.GetUploadedFilesByUserID(userID, limit, offset)
+func (s *FileService) GetFilesByUserID(userID uint, mimeType string, limit, offset int) ([]model.UploadedFile, int64, error) {
+	return s.uploadedFileRepository.GetUploadedFilesByUserID(userID, mimeType, limit, offset)
+}
+
+func (s *FileService) DeleteFile(fileUUID string, userID uint) error {
+	// Get file metadata from database
+	file, err := s.uploadedFileRepository.GetUploadedFileByUUIDAndUserID(fileUUID, userID)
+	if err != nil {
+		return fmt.Errorf("failed to get file metadata: %w", err)
+	}
+	if file == nil {
+		return fmt.Errorf("file not found or not owned by user")
+	}
+
+	// Determine storage type and delete physical file
+	ftpHost := os.Getenv("FTP_HOST")
+	if ftpHost != "" { // Assuming FTP is configured if FTP_HOST is set
+		// Delete from FTP
+		ftpPort := os.Getenv("FTP_PORT")
+		ftpUser := os.Getenv("FTP_USER")
+		ftpPass := os.Getenv("FTP_PASSWORD")
+
+		port, err := strconv.Atoi(ftpPort)
+		if err != nil {
+			return fmt.Errorf("invalid FTP_PORT: %w", err)
+		}
+
+		conn, err := ftp.Dial(fmt.Sprintf("%s:%d", ftpHost, port), ftp.DialWithTimeout(5*time.Second))
+		if err != nil {
+			return fmt.Errorf("failed to connect to FTP server: %w", err)
+		}
+		defer conn.Quit()
+
+		err = conn.Login(ftpUser, ftpPass)
+		if err != nil {
+			return fmt.Errorf("failed to login to FTP server: %w", err)
+		}
+
+		// Use the full relative path from FilePath for FTP deletion
+		err = conn.Delete(file.FilePath)
+		if err != nil {
+			return fmt.Errorf("failed to delete file from FTP: %w", err)
+		}
+	} else {
+		// Delete from local storage
+		// For local storage, file.FilePath is already the full path relative to the project root
+		if err := os.Remove(file.FilePath); err != nil {
+			return fmt.Errorf("failed to delete local file: %w", err)
+		}
+	}
+
+	// Delete metadata from database
+	if err := s.uploadedFileRepository.DeleteUploadedFile(fileUUID, userID); err != nil {
+		return fmt.Errorf("failed to delete file metadata: %w", err)
+	}
+
+	return nil
 }

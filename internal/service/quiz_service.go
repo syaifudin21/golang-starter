@@ -147,12 +147,23 @@ func (s *QuizService) GetQuizWithQuestions(quizUUID string) (*model.Quiz, error)
 	return quiz, nil
 }
 
-func (s *QuizService) ListAllQuizzes() ([]model.Quiz, error) {
-	quizzes, err := s.quizRepo.ListAllQuizzes()
+func (s *QuizService) ListAllQuizzes(keyword string, page, pageSize int) (*dtos.QuizListResponse, error) {
+	quizzes, err := s.quizRepo.ListAllQuizzes(keyword, page, pageSize)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list quizzes: %w", err)
 	}
-	return quizzes, nil
+
+	total, err := s.quizRepo.CountAllQuizzes(keyword)
+	if err != nil {
+		return nil, fmt.Errorf("failed to count quizzes: %w", err)
+	}
+
+	return &dtos.QuizListResponse{
+		Data:     quizzes,
+		Total:    total,
+		Page:     page,
+		PageSize: pageSize,
+	}, nil
 }
 
 func (s *QuizService) UpdateQuiz(quizUUID string, req dtos.UpdateQuizRequest) (*model.Quiz, error) {
@@ -201,7 +212,7 @@ func (s *QuizService) UpdateQuestion(quizUUID string, questionUUID string, req d
 		return nil, fmt.Errorf("question not found with UUID: %s in quiz %s", questionUUID, quizUUID)
 	}
 
-	if req.Content != nil {
+	if len(req.Content) > 0 {
 		contentJSON, err := json.Marshal(req.Content)
 		if err != nil {
 			return nil, fmt.Errorf("failed to marshal content for update: %w", err)

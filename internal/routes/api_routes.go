@@ -36,4 +36,5 @@ func APIRoutes(g *echo.Group, authHandler *handler.AuthHandler, accountHandler *
 	// File upload route
 	g.POST("/upload", fileHandler.UploadFile)
 	g.GET("/files", fileHandler.GetMyFiles)
+	g.DELETE("/files/:uuid", fileHandler.DeleteFile)
 }

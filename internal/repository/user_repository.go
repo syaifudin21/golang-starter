@@ -13,7 +13,8 @@ type UserRepository interface {
 	GetUserByID(userID uint) (*model.User, error)
 	GetUserByUUID(userUUID string) (*model.User, error)
 	UpdateUser(user *model.User) error
-	ListAllUsers() ([]model.User, error)
+	ListAllUsers(keyword, role string, page, pageSize int) ([]model.User, error)
+	CountAllUsers(keyword, role string) (int64, error)
 }
 
 type userRepository struct {
@@ -68,8 +69,37 @@ func (r *userRepository) UpdateUser(user *model.User) error {
 	return r.db.Save(user).Error
 }
 
-func (r *userRepository) ListAllUsers() ([]model.User, error) {
+func (r *userRepository) ListAllUsers(keyword, role string, page, pageSize int) ([]model.User, error) {
 	var users []model.User
-	err := r.db.Find(&users).Error
+	db := r.db.Model(&model.User{})
+
+	if keyword != "" {
+		searchKeyword := "%" + keyword + "%"
+		db = db.Where("name LIKE ? OR email LIKE ?", searchKeyword, searchKeyword)
+	}
+
+	if role != "" {
+		db = db.Where("role = ?", role)
+	}
+
+	offset := (page - 1) * pageSize
+	err := db.Limit(pageSize).Offset(offset).Find(&users).Error
 	return users, err
+}
+
+func (r *userRepository) CountAllUsers(keyword, role string) (int64, error) {
+	var count int64
+	db := r.db.Model(&model.User{})
+
+	if keyword != "" {
+		searchKeyword := "%" + keyword + "%"
+		db = db.Where("name LIKE ? OR email LIKE ?", searchKeyword, searchKeyword)
+	}
+
+	if role != "" {
+		db = db.Where("role = ?", role)
+	}
+
+	err := db.Count(&count).Error
+	return count, err
 }
